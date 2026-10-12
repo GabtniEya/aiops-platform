@@ -68,10 +68,12 @@ def chaos_slow(secondes: int = 5):
 @app.get("/db")
 def test_db():
     """Vérifie que PostgreSQL répond."""
-    with psycopg.connect(DATABASE_URL, connect_timeout=3) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT now()")
-            heure = cur.fetchone()[0]
+    with (
+        psycopg.connect(DATABASE_URL, connect_timeout=3) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute("SELECT now()")
+        heure = cur.fetchone()[0]
     return {"db": "ok", "heure": str(heure)}
 
 
