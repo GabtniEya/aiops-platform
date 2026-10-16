@@ -6,6 +6,8 @@ import os
 import re
 import subprocess
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Optional, TypedDict
 
 from dotenv import load_dotenv
@@ -20,6 +22,11 @@ load_dotenv()
 
 CONTENEUR_BACKEND = "aiops-platform-backend-1"
 ATTENTE_VALIDATION = 30  # secondes d'attente avant de re-mesurer la métrique
+
+# Approbation par le dashboard (fichier partagé avec api.py)
+FICHIER_APPROBATIONS = Path(__file__).parent / "approbations.json"
+ATTENTE_APPROBATION = 300  # secondes : sans réponse, l'action est refusée
+PAUSE_APPROBATION = 2  # secondes entre deux lectures du fichier
 
 # Cible de la remédiation : "docker" (par défaut) ou "k8s"
 CIBLE = os.getenv("AIOPS_CIBLE", "docker").strip().lower()
@@ -90,6 +97,27 @@ def lancer(args, delai):
         return f"[erreur] {e}"
 
 
+# ---------- Fichier d'approbations (partagé avec l'API) ----------
+def lire_approbations() -> dict:
+    for _ in range(3):
+        try:
+            with open(FICHIER_APPROBATIONS, encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+        except json.JSONDecodeError:
+            time.sleep(0.2)
+    return {}
+
+
+def ecrire_approbations(donnees: dict) -> None:
+    """Écrit dans un fichier temporaire puis le remplace (jamais à moitié écrit)."""
+    tmp = FICHIER_APPROBATIONS.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(donnees, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, FICHIER_APPROBATIONS)
+
+
 # ---------- Agent 1 : Diagnosis ----------
 def agent_diagnosis(etat: Etat) -> Etat:
     print("\n[Agent Diagnosis] collecte du contexte et analyse...")
@@ -152,16 +180,55 @@ Réponds UNIQUEMENT avec un JSON : {{"action": "...", "raison": "..."}}"""
     return {"action": action, "raison": raison}
 
 
-# ---------- Validation humaine ----------
+# ---------- Validation humaine (via le dashboard) ----------
 def approbation_humaine(etat: Etat) -> Etat:
     if etat["action"] == "aucune":
         return {"approuve": False}
-    print(f"\n⚠️  L'IA propose : {' '.join(ACTIONS[etat['action']])}")
-    try:
-        rep = input("Approuver cette action ? (o/n) : ").strip().lower()
-    except EOFError:
-        rep = "n"
-    return {"approuve": rep in ("o", "oui", "y", "yes")}
+
+    inc = etat["incident"]
+    inc_id = inc.get("id", "INC-INCONNU")
+    commande = " ".join(ACTIONS[etat["action"]])
+
+    # 1. Demande d'approbation (écrite une seule fois)
+    approbations = lire_approbations()
+    approbations[inc_id] = {
+        "etat": "en_attente",
+        "action": etat["action"],
+        "commande": commande,
+        "metrique": inc.get("metrique"),
+        "diagnostic": etat.get("diagnostic", ""),
+        "raison": etat.get("raison", ""),
+        "demande_a": datetime.now().isoformat(timespec="seconds"),
+    }
+    ecrire_approbations(approbations)
+    print(f"\n⚠️  L'IA propose : {commande}")
+    print(f"En attente de ta décision dans le dashboard "
+          f"({ATTENTE_APPROBATION // 60} min max, sinon refusé)...")
+
+    # 2. Attente de la décision (on ne fait que lire)
+    fin = time.time() + ATTENTE_APPROBATION
+    while time.time() < fin:
+        entree = lire_approbations().get(inc_id, {})
+        if entree.get("etat") == "approuve":
+            print("✅ Action approuvée depuis le dashboard.")
+            return {"approuve": True}
+        if entree.get("etat") == "refuse":
+            print("🚫 Action refusée depuis le dashboard.")
+            return {"approuve": False}
+        time.sleep(PAUSE_APPROBATION)
+
+    # 3. Délai dépassé : refus par défaut (sauf décision arrivée entre-temps)
+    approbations = lire_approbations()
+    entree = approbations.get(inc_id, {})
+    if entree.get("etat") == "approuve":
+        return {"approuve": True}
+    if entree.get("etat") == "en_attente":
+        entree["etat"] = "expire"
+        entree["decide_a"] = datetime.now().isoformat(timespec="seconds")
+        approbations[inc_id] = entree
+        ecrire_approbations(approbations)
+    print("⏱️  Aucune réponse : action refusée par défaut.")
+    return {"approuve": False}
 
 
 def apres_approbation(etat: Etat) -> str:
