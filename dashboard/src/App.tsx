@@ -93,6 +93,9 @@ function App() {
 
       {incidents.map((inc) => {
         const enAttente = inc.approbation?.etat === 'en_attente'
+        const diag = inc.diagnostic || inc.approbation?.diagnostic
+        const action = inc.action_proposee || inc.approbation?.action
+        const raison = inc.raison_action || inc.approbation?.raison
         const resolu =
           inc.statut.toUpperCase() === 'RÉSOLU' ||
           inc.statut.toUpperCase() === 'RESOLU'
@@ -111,23 +114,23 @@ function App() {
               {inc.normale}, z = {inc.z})
             </p>
 
-            {inc.diagnostic ? (
-              <details>
+            {diag ? (
+              <details open={enAttente}>
                 <summary>Diagnostic</summary>
                 <div className="markdown">
-                  <ReactMarkdown>{inc.diagnostic}</ReactMarkdown>
+                  <ReactMarkdown>{diag}</ReactMarkdown>
                 </div>
               </details>
             ) : (
               <p className="vide">Pas de diagnostic pour cet incident.</p>
             )}
 
-            {inc.action_proposee && (
+            {action && (
               <div className="action">
                 <div>
-                  Action proposée : <code>{inc.action_proposee}</code>
+                  Action proposée : <code>{action}</code>
                 </div>
-                {inc.raison_action && <div>{inc.raison_action}</div>}
+                {raison && <div>{raison}</div>}
 
                 {inc.approbation && !enAttente && (
                   <div>État de l'approbation : {inc.approbation.etat}</div>
