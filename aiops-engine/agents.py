@@ -21,10 +21,39 @@ load_dotenv()
 CONTENEUR_BACKEND = "aiops-platform-backend-1"
 ATTENTE_VALIDATION = 30  # secondes d'attente avant de re-mesurer la métrique
 
-# Liste blanche : l'IA ne peut proposer QUE ces actions.
-ACTIONS = {
+# Cible de la remédiation : "docker" (par défaut) ou "k8s"
+CIBLE = os.getenv("AIOPS_CIBLE", "docker").strip().lower()
+
+# Listes blanches : l'IA ne peut proposer QUE ces actions.
+# Ce sont des commandes fixes : l'IA choisit un nom, jamais une commande.
+ACTIONS_DOCKER = {
     "redemarrer_backend": ["docker", "restart", CONTENEUR_BACKEND],
     "aucune": None,
+}
+
+ACTIONS_K8S = {
+    "redemarrer_backend_k8s": [
+        "kubectl", "rollout", "restart", "deployment/backend", "-n", "aiops"
+    ],
+    # On modifie le minimum de l'HPA (2 -> 3), car l'HPA annulerait un "scale" manuel
+    "augmenter_replicas_k8s": [
+        "kubectl", "patch", "hpa", "backend", "-n", "aiops",
+        "--type", "merge", "-p", '{"spec":{"minReplicas":3}}',
+    ],
+    "annuler_deploiement_k8s": [
+        "kubectl", "rollout", "undo", "deployment/backend", "-n", "aiops"
+    ],
+    "aucune": None,
+}
+
+ACTIONS = ACTIONS_K8S if CIBLE == "k8s" else ACTIONS_DOCKER
+
+DESCRIPTIONS = {
+    "redemarrer_backend": "redémarre le conteneur backend (utile si le service est bloqué ou en fuite mémoire)",
+    "redemarrer_backend_k8s": "redémarre progressivement les pods du backend (utile si le service est bloqué ou en fuite mémoire)",
+    "augmenter_replicas_k8s": "fait passer le minimum de pods du backend de 2 à 3 (utile si la charge ou la latence est élevée)",
+    "annuler_deploiement_k8s": "revient à la version précédente du déploiement (utile si l'incident a commencé juste après un déploiement)",
+    "aucune": "ne rien faire (utile si la cause est un bug de code, un endpoint volontairement en erreur, ou si le contexte est insuffisant)",
 }
 
 
@@ -50,6 +79,15 @@ def llm(prompt: str) -> str:
         temperature=0.2,
     )
     return rep.choices[0].message.content
+
+
+def lancer(args, delai):
+    """Lance une commande de la liste blanche et renvoie sa sortie."""
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=delai)
+        return (r.stdout or r.stderr).strip()
+    except Exception as e:
+        return f"[erreur] {e}"
 
 
 # ---------- Agent 1 : Diagnosis ----------
@@ -85,7 +123,8 @@ def agent_knowledge(etat: Etat) -> Etat:
 
 # ---------- Agent 3 : Remediation (propose, n'exécute pas) ----------
 def agent_remediation(etat: Etat) -> Etat:
-    print("\n[Agent Remediation] choix d'une action...")
+    print(f"\n[Agent Remediation] choix d'une action (cible : {CIBLE})...")
+    liste_actions = "\n".join(f'- "{nom}" : {DESCRIPTIONS[nom]}' for nom in ACTIONS)
     prompt = f"""Tu es un SRE prudent. À partir du diagnostic et des runbooks, choisis UNE action.
 
 DIAGNOSTIC :
@@ -95,8 +134,7 @@ CONNAISSANCES :
 {etat['connaissances']}
 
 Actions autorisées (et seulement celles-ci) :
-- "redemarrer_backend" : redémarre le conteneur backend (utile si le service est bloqué ou en fuite mémoire)
-- "aucune" : ne rien faire (utile si la cause est un bug de code, un endpoint volontairement en erreur, ou si le contexte est insuffisant)
+{liste_actions}
 
 Réponds UNIQUEMENT avec un JSON : {{"action": "...", "raison": "..."}}"""
     brut = llm(prompt)
@@ -134,12 +172,17 @@ def apres_approbation(etat: Etat) -> str:
 def executer(etat: Etat) -> Etat:
     args = ACTIONS[etat["action"]]
     print(f"\n[Exécution] {' '.join(args)}")
-    try:
-        r = subprocess.run(args, capture_output=True, text=True, timeout=90)
-        sortie = (r.stdout or r.stderr).strip()
-    except Exception as e:
-        sortie = f"[erreur] {e}"
+    sortie = lancer(args, 90)
     print(sortie)
+    if CIBLE == "k8s":
+        print("\n[Exécution] attente de la fin du déploiement...")
+        suite = lancer(
+            ["kubectl", "rollout", "status", "deployment/backend",
+             "-n", "aiops", "--timeout=120s"],
+            150,
+        )
+        print(suite)
+        sortie = f"{sortie}\n{suite}"
     return {"resultat_action": sortie}
 
 

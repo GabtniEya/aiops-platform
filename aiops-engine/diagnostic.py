@@ -32,6 +32,9 @@ def collecter_contexte():
             ["docker", "logs", "aiops-platform-backend-1", "--tail", "40"]
         )[-2500:],
         "conteneurs": commande(["docker", "ps", "--format", "{{.Names}} {{.Status}}"]),
+        "logs_backend_kubernetes": commande(
+            ["kubectl", "logs", "deploy/backend", "-n", "aiops", "--tail=40"]
+        )[-2500:],
         "pods_kubernetes": commande(["kubectl", "get", "pods", "-n", "aiops"]),
         "evenements_kubernetes": commande(
             ["kubectl", "get", "events", "-n", "aiops", "--sort-by=.lastTimestamp"]
