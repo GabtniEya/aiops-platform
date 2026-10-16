@@ -4,3 +4,4 @@ __pycache__/
 .env
 incidents.json
 chroma_db/
+aiops-engine/approbations.*
