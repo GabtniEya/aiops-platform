@@ -3,3 +3,5 @@ numpy
 scikit-learn
 chromadb
 langgraph
+scikit-learn
+numpy
