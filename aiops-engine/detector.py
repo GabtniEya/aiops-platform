@@ -1,9 +1,12 @@
+import os
 import time
 
 import numpy as np
 import requests
 
-PROMETHEUS = "http://127.0.0.1:9090"
+# Adresse de Prometheus : variable d'environnement PROMETHEUS_URL,
+# sinon celui de Docker Compose (port 9090)
+PROMETHEUS = os.getenv("PROMETHEUS_URL", "http://127.0.0.1:9090")
 
 # nom: (requête, plancher)
 # plancher = en dessous, une variation n'est jamais une anomalie
@@ -18,7 +21,7 @@ METRIQUES = {
         " / sum(rate(http_request_duration_seconds_count[1m]))",
         0.2,
     ),
-    "memoire_mo": ("process_resident_memory_bytes / 1024 / 1024", 10.0),
+    "memoire_mo": ("max(process_resident_memory_bytes) / 1024 / 1024", 10.0),
 }
 
 
