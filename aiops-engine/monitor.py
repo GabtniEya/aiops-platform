@@ -3,10 +3,11 @@ import time
 from datetime import datetime
 
 from detector import METRIQUES, detecter, lire_serie
+from diagnostic import collecter_contexte, diagnostiquer
 
 INTERVALLE = 15  # secondes
 FICHIER = "incidents.json"
-actifs = {}  # métrique -> id de l'incident ouvert
+actifs = {}  # métrique -> incident ouvert
 
 
 def charger():
@@ -53,6 +54,14 @@ def boucle():
                 actifs[nom] = inc
                 sauver(incidents)
                 print(f"[{inc['date']}] 🚨 {inc['id']} {nom} = {inc['valeur']}")
+
+                # Diagnostic immédiat, pendant que la panne est en cours
+                try:
+                    inc["diagnostic"] = diagnostiquer(inc, collecter_contexte())
+                    sauver(incidents)
+                    print(inc["diagnostic"])
+                except Exception as e:
+                    print(f"[diagnostic indisponible] {e}")
 
             elif not res["anomalie"] and nom in actifs:
                 inc = actifs.pop(nom)
