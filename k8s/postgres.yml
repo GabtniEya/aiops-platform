@@ -18,11 +18,20 @@ spec:
           image: postgres:16
           env:
             - name: POSTGRES_USER
-              value: aiops
-            - name: POSTGRES_PASSWORD
-              value: aiops
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: POSTGRES_USER
             - name: POSTGRES_DB
-              value: aiops
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: POSTGRES_PASSWORD
           ports:
             - containerPort: 5432
 ---

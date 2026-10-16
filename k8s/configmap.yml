@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: aiops
+data:
+  POSTGRES_USER: aiops
+  POSTGRES_DB: aiops
+  POSTGRES_HOST: postgres
+  REDIS_HOST: redis
