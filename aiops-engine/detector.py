@@ -43,18 +43,19 @@ def lire_serie(requete, minutes=60):
 
 
 def detecter(valeurs, plancher, seuil=3.0):
-    """Z-score robuste (médiane + MAD) : insensible aux anciens pics."""
+    """Z-score robuste (médiane + MAD) : insensible aux anciens pics.
+    L'écart-type estimé ne descend jamais sous plancher/3, pour qu'une
+    métrique très stable ne déclenche pas d'alerte sur une variation minime."""
     if len(valeurs) < 10:
         return None
     historique = np.array(valeurs[:-1])
     derniere = valeurs[-1]
     mediane = float(np.median(historique))
     mad = float(np.median(np.abs(historique - mediane)))
-    ecart = 1.4826 * mad if mad > 1e-9 else plancher / 3
+    ecart = max(1.4826 * mad, plancher / 3)
     z = (derniere - mediane) / ecart
     anomalie = z > seuil and derniere > plancher
     return {"valeur": derniere, "mediane": mediane, "z": z, "anomalie": anomalie}
-
 
 if __name__ == "__main__":
     for nom, (requete, plancher) in METRIQUES.items():
