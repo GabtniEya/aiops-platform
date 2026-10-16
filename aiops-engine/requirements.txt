@@ -5,3 +5,5 @@ chromadb
 langgraph
 scikit-learn
 numpy
+fastapi
+uvicorn
