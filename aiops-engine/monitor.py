@@ -2,8 +2,8 @@ import json
 import time
 from datetime import datetime
 
+from agents import traiter_incident
 from detector import METRIQUES, detecter, lire_serie
-from diagnostic import collecter_contexte, diagnostiquer
 
 INTERVALLE = 15  # secondes
 FICHIER = "incidents.json"
@@ -55,13 +55,12 @@ def boucle():
                 sauver(incidents)
                 print(f"[{inc['date']}] 🚨 {inc['id']} {nom} = {inc['valeur']}")
 
-                # Diagnostic immédiat, pendant que la panne est en cours
+                # Pipeline multi-agents (diagnostic, connaissances, remédiation, validation)
                 try:
-                    inc["diagnostic"] = diagnostiquer(inc, collecter_contexte())
+                    traiter_incident(inc)
                     sauver(incidents)
-                    print(inc["diagnostic"])
                 except Exception as e:
-                    print(f"[diagnostic indisponible] {e}")
+                    print(f"[pipeline indisponible] {e}")
 
             elif not res["anomalie"] and nom in actifs:
                 inc = actifs.pop(nom)
